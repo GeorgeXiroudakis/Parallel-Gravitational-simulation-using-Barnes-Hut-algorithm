@@ -5,7 +5,7 @@
 #include <cmath>
 
 #include <tbb/parallel_for.h>
-//#include <tbb/blocked_range.h>
+#include <tbb/blocked_range.h>
 
 using namespace tbb;
 
@@ -67,42 +67,34 @@ public:
     void netForce(Body &b){
             double F;
             double minLen = lengthOfSmallestGridContainingBody(TreeRoot, b);
-//            std::cout << b.x - this->centerMassX  << " < " << minLen << std::endl;
-//            if(!(this->isBodyInGrid(b)) )printf("fml\n");
-//        if((b.x - this->centerMassX  > minLen))printf("fml2\n");
-//        if(( b.y - this->centerMassY  > minLen) )printf("fml3\n");
 
-        //if( (!(this->isLeaf)) ){
-                if((!(this->isBodyInGrid(b))) && ((this->centerMassX - b.x) > minLen) && ((this->centerMassY - b.y) > minLen)){
-                    // calculate with the aprox
-                    //printf("got in\n");
-                    double dx = this->centerMassX - b.x;
-                    double dy = this->centerMassY - b.y;
-                    double r_squared = dx * dx + dy * dy;
-                    if(r_squared != 0){
-                        F = (G * this->TotalMass * b.mass) / r_squared;
+            if((!(this->isBodyInGrid(b))) && ((this->centerMassX - b.x) > minLen) && ((this->centerMassY - b.y) > minLen)){
+                // calculate with the aprox
+                double dx = this->centerMassX - b.x;
+                double dy = this->centerMassY - b.y;
+                double r_squared = dx * dx + dy * dy;
+                if(r_squared != 0){
+                    F = (G * this->TotalMass * b.mass) / r_squared;
 
-                        b.netForceX = (F * (b.x - this->centerMassX)) / sqrt(r_squared);
-                        b.netForceY = (F * (b.y - this->centerMassY)) / sqrt(r_squared);
-                        //std::cout << "r_squared: " << F << std::endl;
-                        //std::cout << b.netForceX << std::endl;
-                    }else{
-//                        b.netForceX = 0;
-//                        b.netForceY = 0;
-                    }
-
-                }else{
-
-                    //clasulate for each children
-                    for (bhTreeNode* child : children) {
-                        child->netForce(b);
-                    }
+                    b.netForceX = (F * (b.x - this->centerMassX)) / sqrt(r_squared);
+                    b.netForceY = (F * (b.y - this->centerMassY)) / sqrt(r_squared);
                 }
-            //}else{
-                //if leaf
-            //}
+
+            }else{
+
+                //clasulate for each children
+                for (bhTreeNode* child : children) {
+                    child->netForce(b);
+                }
 
 
+                //not worth the overhead
+    //                    parallel_for(blocked_range<size_t>(0, children.size()), [&](const blocked_range<size_t>& r) {
+    //                        for(size_t i = r.begin(); i != r.end(); ++i) {
+    //                            children[i]->netForce(b);
+    //                        }
+    //                    });
+            }
     }
 
 };
@@ -140,7 +132,7 @@ bhTreeNode* createTree(double minX, double minY, double maxX, double maxY) {
     double sumOfxTimesMass = 0.0;
     double sumOfyTimesMass = 0.0;
     for (auto &body : bodies) {
-        if (body.x >= minX && body.x <= maxX && body.y >= minY && body.y <= maxY) {
+        if (root->isBodyInGrid(body)) {
             bodyCount++;
             root->TotalMass += body.mass;
             sumOfxTimesMass += body.x * body.mass;
@@ -226,15 +218,22 @@ void runSimulation(){
         //create Tree
         TreeRoot = createTree(-universeSize, -universeSize, universeSize, universeSize);
 
-        // calculate forces and new possisiton
-        parallel_for(blocked_range<size_t>(0, bodies.size(), 100),
-                                           [=](const blocked_range<size_t>& r) -> void {
-                                               for(size_t i = r.begin(); i != r.end(); i++ ) {
-                                                   TreeRoot->netForce(bodies[i]);
-                                                   bodies[i].calculateNewPossition();
-                                               }
-                                           }
-                );
+        // calculate forces and new position(they dont have race condition as each pressure of a bodied only read from the tree
+        // and its self and only changes the data to its self and not the tree that the other bodies reed)
+        parallel_for(
+
+                blocked_range<size_t>(0, bodies.size()),
+
+                [&](const blocked_range<size_t>& r) -> void {
+                           for(size_t i = r.begin(); i != r.end(); i++ ) {
+                               // Calculate net force acting on the body
+                               TreeRoot->netForce(bodies[i]);
+                               // Update position of the body according to the forces
+                               bodies[i].calculateNewPossition();
+                           }
+                       }
+                       
+         );
 
 
 
