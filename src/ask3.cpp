@@ -162,7 +162,6 @@ bhTreeNode* createTree(double minX, double minY, double maxX, double maxY) {
     }
 
 
-
     // Calculate midpoints
     double midX = (minX + maxX) / 2;
     double midY = (minY + maxY) / 2;
@@ -228,20 +227,14 @@ void runSimulation(){
         TreeRoot = createTree(-universeSize, -universeSize, universeSize, universeSize);
 
         // calculate forces and new possisiton
-        for(auto &body : bodies){
-            TreeRoot->netForce(body);
-            body.calculateNewPossition();
-        }
-
-
-//        parallel_for(blocked_range<size_t>(0, bodies.size(), 100),
-//                                           [=](const blocked_range<size_t>& r) -> void {
-//                                               for(size_t i = r.begin(); i != r.end(); i++ ) {
-//                                                   TreeRoot->netForce(bodies[i]);
-//                                                   bodies[i].calculateNewPossition();
-//                                               }
-//                                           }
-//                );
+        parallel_for(blocked_range<size_t>(0, bodies.size(), 100),
+                                           [=](const blocked_range<size_t>& r) -> void {
+                                               for(size_t i = r.begin(); i != r.end(); i++ ) {
+                                                   TreeRoot->netForce(bodies[i]);
+                                                   bodies[i].calculateNewPossition();
+                                               }
+                                           }
+                );
 
 
 
